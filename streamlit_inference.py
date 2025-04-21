@@ -151,40 +151,62 @@ class Inference:
         self.sidebar()  # Create the sidebar
         self.source_upload()  # Upload the video source
         self.configure()  # Configure the app
-
+        
         if self.st.sidebar.button("Start"):
-            stop_button = self.st.button("Stop")  # Button to stop the inference
-            cap = cv2.VideoCapture(self.vid_file_name)  # Capture the video
-            if not cap.isOpened():
-                self.st.error("Could not open webcam or video source.")
-                return
-
-            while cap.isOpened():
-                success, frame = cap.read()
-                if not success:
-                    self.st.warning("Failed to read frame from webcam. Please verify the webcam is connected properly.")
-                    break
-
-                # Process frame with model
-                if self.enable_trk == "Yes":
-                    results = self.model.track(
-                        frame, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+            if self.source == "video":
+                # Xử lý cho nguồn video như bình thường
+                stop_button = self.st.button("Stop")
+                cap = cv2.VideoCapture(self.vid_file_name)
+                if not cap.isOpened():
+                    self.st.error("Could not open video source.")
+                    return
+                    
+                # Phần xử lý video giữ nguyên...
+                
+            elif self.source == "webcam":
+                # Sử dụng streamlit-webrtc cho webcam
+                check_requirements("streamlit-webrtc")
+                from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+                import av
+                
+                class VideoProcessor(VideoProcessorBase):
+                    def __init__(self, model, conf, iou, selected_ind, enable_trk):
+                        self.model = model
+                        self.conf = conf
+                        self.iou = iou
+                        self.selected_ind = selected_ind
+                        self.enable_trk = enable_trk
+                        
+                    def recv(self, frame):
+                        img = frame.to_ndarray(format="bgr24")
+                        
+                        # Process frame with model
+                        if self.enable_trk == "Yes":
+                            results = self.model.track(
+                                img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+                            )
+                        else:
+                            results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
+                            
+                        annotated_frame = results[0].plot()
+                        return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+                
+                # Tạo hai cột cho hiển thị
+                col1, col2 = self.st.columns(2)
+                
+                with col1:
+                    self.st.write("Original Stream (WebRTC không hỗ trợ hiển thị luồng gốc)")
+                    
+                with col2:
+                    self.st.write("Processed Stream")
+                    webrtc_ctx = webrtc_streamer(
+                        key="ultralytics-detection",
+                        video_processor_factory=lambda: VideoProcessor(
+                            self.model, self.conf, self.iou, self.selected_ind, self.enable_trk
+                        ),
+                        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
+                        media_stream_constraints={"video": True, "audio": False},
                     )
-                else:
-                    results = self.model(frame, conf=self.conf, iou=self.iou, classes=self.selected_ind)
-
-                annotated_frame = results[0].plot()  # Add annotations on frame
-
-                if stop_button:
-                    cap.release()  # Release the capture
-                    self.st.stop()  # Stop streamlit app
-
-                self.org_frame.image(frame, channels="BGR")  # Display original frame
-                self.ann_frame.image(annotated_frame, channels="BGR")  # Display processed frame
-
-            cap.release()  # Release the capture
-        # cv2.destroyAllWindows()  # Destroy all OpenCV windows
-
 
 if __name__ == "__main__":
     import sys  # Import the sys module for accessing command-line arguments
