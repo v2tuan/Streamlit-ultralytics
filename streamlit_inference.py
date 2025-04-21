@@ -234,35 +234,27 @@ class Inference:
             # Thay đổi phần cấu hình WebRTC trong phương thức inference()
             rtc_configuration = RTCConfiguration({
                     "iceServers": [
-                        # Google STUN servers (định dạng đúng)
-                        {"urls": "stun:stun.l.google.com:19302"},
-                        {"urls": "stun:stun1.l.google.com:19302"},
-                        {"urls": "stun:stun2.l.google.com:19302"},
-                        {"urls": "stun:stun3.l.google.com:19302"},
-                        {"urls": "stun:stun4.l.google.com:19302"},
-                        
-                        # Twilio STUN server (đã bỏ tham số query)
-                        {"urls": "stun:global.stun.twilio.com:3478"},
-                        
-                        # Các TURN servers (định dạng đúng với credentials)
                         {
-                            "urls": "turn:openrelay.metered.ca:80",
-                            "username": "openrelayproject",
-                            "credential": "openrelayproject"
+                            "urls": "stun:global.stun.twilio.com:3478"
                         },
                         {
-                            "urls": "turn:openrelay.metered.ca:443",
-                            "username": "openrelayproject",
-                            "credential": "openrelayproject"
+                            "urls": "turn:global.turn.twilio.com:3478?transport=udp",
+                            "username": "9d4853635b24303fed5bc727b3affd45b5a7e18723896e3a483a7079b4146317",
+                            "credential": "+R3jJHFzw+LQgnxIDWjq+nx89MD4CUCMy+oDWwo63qc="
                         },
-                        # Thêm option transport=tcp như một server riêng
                         {
-                            "urls": "turn:openrelay.metered.ca:443?transport=tcp",
-                            "username": "openrelayproject",
-                            "credential": "openrelayproject"
+                            "urls": "turn:global.turn.twilio.com:3478?transport=tcp",
+                            "username": "9d4853635b24303fed5bc727b3affd45b5a7e18723896e3a483a7079b4146317",
+                            "credential": "+R3jJHFzw+LQgnxIDWjq+nx89MD4CUCMy+oDWwo63qc="
+                        },
+                        {
+                            "urls": "turn:global.turn.twilio.com:443?transport=tcp",
+                            "username": "9d4853635b24303fed5bc727b3affd45b5a7e18723896e3a483a7079b4146317",
+                            "credential": "+R3jJHFzw+LQgnxIDWjq+nx89MD4CUCMy+oDWwo63qc="
                         }
                     ]
-            })
+                }
+            )
             
             # Start WebRTC streamer
             webrtc_ctx = webrtc_streamer(
