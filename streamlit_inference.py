@@ -231,10 +231,32 @@ class Inference:
                     return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
             
             # Configure WebRTC
-            rtc_configuration = RTCConfiguration(
-                {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
-            )
-            
+            # rtc_configuration = RTCConfiguration(
+            #     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+            # )
+            # Thay thế phần RTC configuration cũ bằng cấu hình Xirsys của bạn
+            rtc_configuration = RTCConfiguration({
+                "iceServers": [
+                    {
+                        "urls": [
+                            "stun:turn.xirsys.com"  # STUN server
+                        ]
+                    },
+                    {
+                        "urls": [
+                            "turn:turn.xirsys.com:80?transport=udp",
+                            "turn:turn.xirsys.com:3478?transport=udp",
+                            "turn:turn.xirsys.com:80?transport=tcp",
+                            "turn:turn.xirsys.com:3478?transport=tcp",
+                            "turns:turn.xirsys.com:443?transport=tcp",
+                            "turns:turn.xirsys.com:5349?transport=tcp"
+                        ],
+                        "username": "v2tuan",  # Thay bằng username Xirsys của bạn
+                        "credential": "3f33493e-1e91-11f0-9529-0242ac150002"  # Thay bằng secret key của bạn
+                    }
+                ]
+            })
+
             # Start WebRTC streamer
             webrtc_ctx = webrtc_streamer(
                 key="ultralytics-detection",
