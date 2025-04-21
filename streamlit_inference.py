@@ -9,7 +9,18 @@ from ultralytics import YOLO
 from ultralytics.utils import LOGGER
 from ultralytics.utils.checks import check_requirements
 from ultralytics.utils.downloads import GITHUB_ASSETS_STEMS
+import requests
+import json
 
+# def get_xirsys_servers():
+#     url = "https://v2tuan:3f33493e-1e91-11f0-9529-0242ac150002@global.xirsys.net/_turn/MyFirstApp"
+#     headers = {"Content-type": "application/json"}
+#     data = {"format": "urls"}
+    
+#     response = requests.put(url, headers=headers, data=json.dumps(data))
+#     if response.status_code == 200:
+#         return response.json()
+#     return None
 
 class Inference:
     """
@@ -235,24 +246,42 @@ class Inference:
             #     {"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
             # )
             # Thay thế phần RTC configuration cũ bằng cấu hình Xirsys của bạn
+            # rtc_configuration = RTCConfiguration({
+            #     "iceServers": [
+            #         {
+            #             "urls": [
+            #                 "stun:turn.xirsys.com"  # STUN server
+            #             ]
+            #         },
+            #         {
+            #             "urls": [
+            #                 "turn:turn.xirsys.com:80?transport=udp",
+            #                 "turn:turn.xirsys.com:3478?transport=udp",
+            #                 "turn:turn.xirsys.com:80?transport=tcp",
+            #                 "turn:turn.xirsys.com:3478?transport=tcp",
+            #                 "turns:turn.xirsys.com:443?transport=tcp",
+            #                 "turns:turn.xirsys.com:5349?transport=tcp"
+            #             ],
+            #             "username": "v2tuan",  # Thay bằng username Xirsys của bạn
+            #             "credential": "3f33493e-1e91-11f0-9529-0242ac150002"  # Thay bằng secret key của bạn
+            #         }
+            #     ]
+            # })
+            # Cấu hình WebRTC với thông tin từ Xirsys
             rtc_configuration = RTCConfiguration({
                 "iceServers": [
                     {
                         "urls": [
-                            "stun:turn.xirsys.com"  # STUN server
-                        ]
-                    },
-                    {
-                        "urls": [
-                            "turn:turn.xirsys.com:80?transport=udp",
-                            "turn:turn.xirsys.com:3478?transport=udp",
-                            "turn:turn.xirsys.com:80?transport=tcp",
-                            "turn:turn.xirsys.com:3478?transport=tcp",
-                            "turns:turn.xirsys.com:443?transport=tcp",
-                            "turns:turn.xirsys.com:5349?transport=tcp"
+                            "stun:ss-turn1.xirsys.com",
+                            "turn:ss-turn1.xirsys.com:80?transport=udp",
+                            "turn:ss-turn1.xirsys.com:3478?transport=udp",
+                            "turn:ss-turn1.xirsys.com:80?transport=tcp",
+                            "turn:ss-turn1.xirsys.com:3478?transport=tcp",
+                            "turns:ss-turn1.xirsys.com:443?transport=tcp",
+                            "turns:ss-turn1.xirsys.com:5349?transport=tcp"
                         ],
-                        "username": "v2tuan",  # Thay bằng username Xirsys của bạn
-                        "credential": "3f33493e-1e91-11f0-9529-0242ac150002"  # Thay bằng secret key của bạn
+                        "username": "pdOi2uNVEdfXcCvnQcrrv4IZLiIPzhfiEYbx0pL0WD02wN2C_mhwJnB2GhDRMWF6AAAAAGgGEXp2MnR1YW4=",
+                        "credential": "05537312-1e94-11f0-bc36-0242ac140004"
                     }
                 ]
             })
