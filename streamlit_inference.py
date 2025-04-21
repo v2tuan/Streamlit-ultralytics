@@ -164,10 +164,13 @@ class Inference:
                 # Phần xử lý video giữ nguyên...
                 
             elif self.source == "webcam":
-                # Sử dụng streamlit-webrtc cho webcam
                 check_requirements("streamlit-webrtc")
-                from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
+                from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
                 import av
+                
+                # Hiển thị thông báo trạng thái
+                status_placeholder = self.st.empty()
+                status_placeholder.info("Đang khởi tạo webcam, vui lòng đợi...")
                 
                 class VideoProcessor(VideoProcessorBase):
                     def __init__(self, model, conf, iou, selected_ind, enable_trk):
@@ -175,38 +178,34 @@ class Inference:
                         self.conf = conf
                         self.iou = iou
                         self.selected_ind = selected_ind
-                        self.enable_trk = enable_trk
+                        self.enable_trk = enable_trk == "Yes"
                         
                     def recv(self, frame):
                         img = frame.to_ndarray(format="bgr24")
                         
                         # Process frame with model
-                        if self.enable_trk == "Yes":
-                            results = self.model.track(
-                                img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
-                            )
-                        else:
-                            results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
-                            
-                        annotated_frame = results[0].plot()
-                        return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+                        try:
+                            if self.enable_trk:
+                                results = self.model.track(
+                                    img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+                                )
+                            else:
+                                results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
+                                
+                            annotated_frame = results[0].plot()
+                            return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+                        except Exception as e:
+                            self.st.error(f"Lỗi xử lý khung hình: {e}")
+                            return frame
                 
-                # Tạo hai cột cho hiển thị
-                col1, col2 = self.st.columns(2)
-                
-                with col1:
-                    self.st.write("Original Stream (WebRTC không hỗ trợ hiển thị luồng gốc)")
-                    
-                with col2:
-                    self.st.write("Processed Stream")
-                    webrtc_ctx = webrtc_streamer(
-                        key="ultralytics-detection",
-                        video_processor_factory=lambda: VideoProcessor(
-                            self.model, self.conf, self.iou, self.selected_ind, self.enable_trk
-                        ),
-                        rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-                        media_stream_constraints={"video": True, "audio": False},
-                    )
+                # Cấu hình RTC với nhiều máy chủ STUN để tăng độ ổn định
+                rtc_config = RTCConfiguration(
+                    {"iceServers": [
+                        {"urls": ["stun:stun.l.google.com:19302"]},
+                        {"urls": ["stun:stun1.l.google.com:19302"]},
+                        {"urls": ["stun:stun2.l.google.com:19302"]}
+                    ]}
+                )
 
 if __name__ == "__main__":
     import sys  # Import the sys module for accessing command-line arguments
