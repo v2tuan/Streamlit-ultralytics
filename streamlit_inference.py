@@ -231,24 +231,38 @@ class Inference:
                     return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
             
             # Configure WebRTC
-            rtc_configuration = RTCConfiguration(
-                {"iceServers": [
-                    {"urls": ["stun:stun.l.google.com:19302"]},
-                    {"urls": ["stun:stun1.l.google.com:19302"]},
-                    {"urls": ["stun:stun2.l.google.com:19302"]},
-                    # Thêm máy chủ TURN miễn phí (hoặc sử dụng dịch vụ TURN riêng)
-                    {
-                        "urls": "turn:openrelay.metered.ca:80",
-                        "username": "openrelayproject",
-                        "credential": "openrelayproject",
-                    },
-                    {
-                        "urls": "turn:openrelay.metered.ca:443",
-                        "username": "openrelayproject",
-                        "credential": "openrelayproject",
-                    }
-                ]}
-            )
+            # Thay đổi phần cấu hình WebRTC trong phương thức inference()
+            rtc_configuration = RTCConfiguration({
+                    "iceServers": [
+                        # Google STUN servers (định dạng đúng)
+                        {"urls": "stun:stun.l.google.com:19302"},
+                        {"urls": "stun:stun1.l.google.com:19302"},
+                        {"urls": "stun:stun2.l.google.com:19302"},
+                        {"urls": "stun:stun3.l.google.com:19302"},
+                        {"urls": "stun:stun4.l.google.com:19302"},
+                        
+                        # Twilio STUN server (đã bỏ tham số query)
+                        {"urls": "stun:global.stun.twilio.com:3478"},
+                        
+                        # Các TURN servers (định dạng đúng với credentials)
+                        {
+                            "urls": "turn:openrelay.metered.ca:80",
+                            "username": "openrelayproject",
+                            "credential": "openrelayproject"
+                        },
+                        {
+                            "urls": "turn:openrelay.metered.ca:443",
+                            "username": "openrelayproject",
+                            "credential": "openrelayproject"
+                        },
+                        # Thêm option transport=tcp như một server riêng
+                        {
+                            "urls": "turn:openrelay.metered.ca:443?transport=tcp",
+                            "username": "openrelayproject",
+                            "credential": "openrelayproject"
+                        }
+                    ]
+            })
             
             # Start WebRTC streamer
             webrtc_ctx = webrtc_streamer(
