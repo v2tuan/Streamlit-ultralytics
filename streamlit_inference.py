@@ -37,8 +37,8 @@ class Inference:
         self.model = None
 
         # Using queues for thread-safe data passing
-        self.raw_frame_queue = queue.Queue(maxsize=1)  # Queue for raw frames
-        self.processed_frame_queue = queue.Queue(maxsize=1)  # Queue for processed frames
+        self.frame_queue = queue.Queue(maxsize=1)
+        self.annotated_frame_queue = queue.Queue(maxsize=1)
         self.running = False
 
         self.temp_dict = {"model": None, **kwargs}
@@ -116,35 +116,6 @@ class Inference:
             
         return class_names
 
-    def process_frames(self):
-        """Process frames in a separate thread"""
-        while self.running:
-            try:
-                if not self.raw_frame_queue.empty():
-                    frame = self.raw_frame_queue.get_nowait()
-                    
-                    # Process with YOLO
-                    if self.enable_trk == "Yes":
-                        results = self.model.track(
-                            frame, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
-                        )
-                    else:
-                        results = self.model(frame, conf=self.conf, iou=self.iou, classes=self.selected_ind)
-                    
-                    # Annotate the frame
-                    annotated_frame = results[0].plot()
-                    
-                    # Put processed frame in queue
-                    if self.processed_frame_queue.full():
-                        self.processed_frame_queue.get_nowait()
-                    self.processed_frame_queue.put_nowait(annotated_frame)
-                    
-            except queue.Empty:
-                time.sleep(0.01)  # Small delay to prevent CPU overuse
-            except Exception as e:
-                self.st.error(f"Error in processing thread: {e}")
-                break
-
     def inference(self):
         """Perform real-time object detection inference."""
         self.web_ui()
@@ -152,86 +123,14 @@ class Inference:
         self.source_upload()
         class_names = self.configure()
         
-        col1, col2 = self.st.columns(2)
+        # Create two columns for displaying frames
+        col1 = self.st.columns(1)[0]
         
         with col1:
-            self.st.write("Original Webcam Stream")
+            self.st.write("Webcam Stream (Left: Original, Right: Processed)")
             self.org_frame = self.st.empty()
         
-        with col2:
-            self.st.write("Processed Stream")
-            self.ann_frame = self.st.empty()
-        
-        if self.source == "webcam":
-            check_requirements("streamlit-webrtc>=0.45.0 av>=10.0.0")
-            from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
-            import av
-            
-            class VideoProcessor(VideoProcessorBase):
-                def __init__(self, frame_queue):
-                    self.frame_queue = frame_queue
-                    
-                def recv(self, frame):
-                    img = frame.to_ndarray(format="bgr24")
-                    
-                    # Put frame in queue for processing
-                    try:
-                        if self.frame_queue.full():
-                            self.frame_queue.get_nowait()
-                        self.frame_queue.put_nowait(img.copy())
-                    except queue.Full:
-                        pass
-                    
-                    return av.VideoFrame.from_ndarray(img, format="bgr24")
-            
-            # Configure WebRTC
-            rtc_configuration = RTCConfiguration({
-                "iceServers": [
-                    {
-                        "urls": "stun:global.stun.twilio.com:3478"
-                    }
-                ]
-            })
-            
-            # Start processing thread
-            self.running = True
-            processing_thread = threading.Thread(target=self.process_frames, daemon=True)
-            processing_thread.start()
-            
-            # Start WebRTC streamer
-            webrtc_ctx = webrtc_streamer(
-                key="ultralytics-detection",
-                video_processor_factory=lambda: VideoProcessor(self.raw_frame_queue),
-                rtc_configuration=rtc_configuration,
-                media_stream_constraints={"video": True, "audio": False},
-                async_processing=True,
-            )
-            
-            # Update display frames
-            while webrtc_ctx.state.playing:
-                try:
-                    # Update original frame
-                    if not self.raw_frame_queue.empty():
-                        frame = self.raw_frame_queue.get()
-                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        self.org_frame.image(rgb_frame, channels="RGB")
-                    
-                    # Update processed frame
-                    if not self.processed_frame_queue.empty():
-                        processed_frame = self.processed_frame_queue.get()
-                        processed_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-                        self.ann_frame.image(processed_rgb, channels="RGB")
-                    
-                except Exception as e:
-                    self.st.error(f"Error updating frames: {e}")
-                
-                time.sleep(0.03)  # Update every 30ms (approx. 30fps)
-            
-            # Cleanup
-            self.running = False
-            processing_thread.join()
-            
-        elif self.source == "video" and self.vid_file_name:
+        if self.source == "video" and self.vid_file_name:
             if self.st.sidebar.button("Start"):
                 stop_button = self.st.button("Stop")
                 cap = cv2.VideoCapture(self.vid_file_name)
@@ -272,6 +171,102 @@ class Inference:
                         break
                 
                 cap.release()
+        
+        # Process webcam case with streamlit-webrtc
+        elif self.source == "webcam":
+            check_requirements("streamlit-webrtc>=0.45.0 av>=10.0.0")
+            from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
+            import av
+            
+            class VideoProcessor(VideoProcessorBase):
+                def __init__(self, model, conf, iou, selected_ind, enable_trk, class_names, frame_queue):
+                    self.model = model
+                    self.conf = conf
+                    self.iou = iou
+                    self.selected_ind = selected_ind
+                    self.enable_trk = enable_trk
+                    self.class_names = class_names
+                    self.frame_queue = frame_queue
+                    
+                def recv(self, frame):
+                    img = frame.to_ndarray(format="bgr24")
+                    
+                    # Put original frame in queue for display
+                    try:
+                        if self.frame_queue.full():
+                            self.frame_queue.get_nowait()
+                        self.frame_queue.put_nowait(img.copy())
+                    except queue.Full:
+                        pass
+                    
+                    # Process frame with model
+                    if self.enable_trk == "Yes":
+                        results = self.model.track(
+                            img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+                        )
+                    else:
+                        results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
+                    
+                    # Annotate the frame with detection results
+                    annotated_frame = results[0].plot()
+                    
+                    # Create a combined frame with original and processed side by side
+                    h, w = img.shape[:2]
+                    combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
+                    combined_frame[:, :w] = img
+                    combined_frame[:, w:] = annotated_frame
+                    
+                    return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
+            
+            # Configure WebRTC
+            rtc_configuration = RTCConfiguration({
+                "iceServers": [
+                    {
+                        "urls": "stun:global.stun.twilio.com:3478"
+                    },
+                    {
+                        "urls": "turn:global.turn.twilio.com:3478?transport=udp",
+                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
+                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
+                    }
+                ]
+            })
+
+            # Video constraints for better performance
+            video_constraints = {
+                "width": {"min": 640, "max": 1280},
+                "height": {"min": 480, "max": 720},
+                "frameRate": {"min": 15, "max": 30}
+            }
+
+            # Start WebRTC streamer in the second column
+            with col1:
+                webrtc_ctx = webrtc_streamer(
+                    key="ultralytics-detection",
+                    video_processor_factory=lambda: VideoProcessor(
+                        self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
+                    ),
+                    rtc_configuration=rtc_configuration,
+                    media_stream_constraints={
+                        "video": video_constraints,
+                        "audio": False
+                    },
+                    async_processing=True,
+                    video_html_attrs={
+                        "style": {"width": "100%", "margin": "0 auto", "border": "5px solid #FF64DA"},
+                        "controls": False,
+                        "autoPlay": True,
+                        "muted": True,
+                    },
+                )
+                
+                # Information about WebRTC
+                self.st.info("""
+                ** Lưu ý về Webcam:**
+                - Thông qua WebRTC, ứng dụng sẽ cần quyền truy cập vào webcam của bạn
+                - Xử lý video được thực hiện trong trình duyệt của bạn
+                - Hãy chắc chắn bạn đã cấp quyền truy cập webcam khi được hỏi
+                """)
 
 
 if __name__ == "__main__":
