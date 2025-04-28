@@ -36,10 +36,12 @@ class Inference:
         self.selected_ind = []
         self.model = None
 
-        # Using queues for thread-safe data passing
-        self.frame_queue = queue.Queue(maxsize=1)
-        self.annotated_frame_queue = queue.Queue(maxsize=1)
+        # Using queues for thread-safe data passing with larger size
+        self.frame_queue = queue.Queue(maxsize=2)  # Increased queue size
+        self.annotated_frame_queue = queue.Queue(maxsize=2)
         self.running = False
+        self.last_frame_time = 0
+        self.frame_interval = 1/30  # Target 30 FPS
 
         self.temp_dict = {"model": None, **kwargs}
         self.model_path = None
@@ -191,6 +193,13 @@ class Inference:
                 def recv(self, frame):
                     img = frame.to_ndarray(format="bgr24")
                     
+                    # Resize frame for processing while maintaining aspect ratio
+                    max_size = 640  # You can adjust this value
+                    h, w = img.shape[:2]
+                    scale = max_size / max(h, w)
+                    if scale < 1:
+                        img = cv2.resize(img, (int(w * scale), int(h * scale)))
+                    
                     # Put original frame in queue for display
                     try:
                         if self.frame_queue.full():
@@ -209,6 +218,10 @@ class Inference:
                     
                     # Annotate the frame with detection results
                     annotated_frame = results[0].plot()
+                    
+                    # Resize back to original size for display
+                    if scale < 1:
+                        annotated_frame = cv2.resize(annotated_frame, (w, h))
                     
                     # Create a combined frame with original and processed side by side
                     h, w = img.shape[:2]
@@ -247,12 +260,15 @@ class Inference:
                 while True:
                     try:
                         if not self.frame_queue.empty():
-                            frame = self.frame_queue.get()
-                            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            self.org_frame.image(rgb_frame, channels="RGB")
+                            current_time = time.time()
+                            if current_time - self.last_frame_time >= self.frame_interval:
+                                frame = self.frame_queue.get()
+                                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                                self.org_frame.image(rgb_frame, channels="RGB")
+                                self.last_frame_time = current_time
                     except Exception as e:
                         self.st.error(f"Error updating original frame: {e}")
-                    time.sleep(0.03)  # Update every 30ms (approx. 30fps)
+                    time.sleep(0.01)  # Reduced sleep time for more responsive updates
             
             # Start WebRTC streamer in the second column
             with col1:
