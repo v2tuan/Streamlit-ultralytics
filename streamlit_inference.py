@@ -195,26 +195,29 @@ class Inference:
             # Configure WebRTC
             from aiortc import RTCConfiguration, RTCIceServer
 
-            rtc_configuration = RTCConfiguration(iceServers=[
-                RTCIceServer(
-                    urls="stun:global.stun.twilio.com:3478"
-                ),
-                RTCIceServer(
-                    urls="turn:global.turn.twilio.com:3478?transport=udp",
-                    username="e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
-                    credential="gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
-                ),
-                RTCIceServer(
-                    urls="turn:global.turn.twilio.com:3478?transport=tcp",
-                    username="e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
-                    credential="gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
-                ),
-                RTCIceServer(
-                    urls="turn:global.turn.twilio.com:443?transport=tcp",
-                    username="e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
-                    credential="gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
-                )
-            ])
+            rtc_configuration = RTCConfiguration({
+                "iceServers": [
+                    {
+                        "urls": "stun:global.stun.twilio.com:3478"
+                    },
+                    {
+                        "urls": "turn:global.turn.twilio.com:3478?transport=udp",
+                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
+                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
+                    },
+                    {
+                        "urls": "turn:global.turn.twilio.com:3478?transport=tcp",
+                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
+                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
+                    },
+                    {
+                        "urls": "turn:global.turn.twilio.com:443?transport=tcp",
+                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
+                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
+                    }
+                ]
+            })
+
             
             # Create a placeholder for the original frame
             original_frame_placeholder = col1.empty()
