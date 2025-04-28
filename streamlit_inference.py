@@ -199,44 +199,25 @@ class Inference:
                     except queue.Full:
                         pass
                     
-                    return av.VideoFrame.from_ndarray(img, format="bgr24")
-
-            class ProcessingVideoProcessor(VideoProcessorBase):
-                def __init__(self, model, conf, iou, selected_ind, enable_trk, class_names, frame_queue):
-                    self.model = model
-                    self.conf = conf
-                    self.iou = iou
-                    self.selected_ind = selected_ind
-                    self.enable_trk = enable_trk
-                    self.class_names = class_names
-                    self.frame_queue = frame_queue
+                    # Process frame with model
+                    if self.enable_trk == "Yes":
+                        results = self.model.track(
+                            img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+                        )
+                    else:
+                        results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
                     
-                def recv(self, frame):
-                    try:
-                        # Get the latest frame from the queue
-                        img = self.frame_queue.get_nowait()
-                        
-                        # Process frame with model
-                        if self.enable_trk == "Yes":
-                            results = self.model.track(
-                                img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
-                            )
-                        else:
-                            results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
-                        
-                        # Annotate the frame with detection results
-                        annotated_frame = results[0].plot()
-                        
-                        # Create a combined frame with original and processed side by side
-                        h, w = img.shape[:2]
-                        combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
-                        combined_frame[:, :w] = img
-                        combined_frame[:, w:] = annotated_frame
-                        
-                        return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
-                    except queue.Empty:
-                        return frame
-
+                    # Annotate the frame with detection results
+                    annotated_frame = results[0].plot()
+                    
+                    # Create a combined frame with original and processed side by side
+                    h, w = img.shape[:2]
+                    combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
+                    combined_frame[:, :w] = img
+                    combined_frame[:, w:] = annotated_frame
+                    
+                    return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
+            
             # Configure WebRTC
             rtc_configuration = RTCConfiguration({
                 "iceServers": [
@@ -247,71 +228,57 @@ class Inference:
                         "urls": "turn:global.turn.twilio.com:3478?transport=udp",
                         "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
                         "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
+                    },
+                    {
+                        "urls": "turn:global.turn.twilio.com:3478?transport=tcp",
+                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
+                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
+                    },
+                    {
+                        "urls": "turn:global.turn.twilio.com:443?transport=tcp",
+                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
+                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
                     }
                 ]
             })
-
-            # Video constraints for better performance
-            video_constraints = {
-                "width": {"min": 640, "max": 1280},
-                "height": {"min": 480, "max": 720},
-                "frameRate": {"min": 15, "max": 30}
-            }
-
-            # Create two columns for displaying frames
-            col1, col2 = self.st.columns(2)
             
-            # Start WebRTC streamer for receiving video
+            # Function to update the original frame
+            def update_original_frame():
+                while True:
+                    try:
+                        if not self.frame_queue.empty():
+                            frame = self.frame_queue.get()
+                            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            self.org_frame.image(rgb_frame, channels="RGB")
+                    except Exception as e:
+                        self.st.error(f"Error updating original frame: {e}")
+                    time.sleep(0.03)  # Update every 30ms (approx. 30fps)
+            
+            # Start WebRTC streamer in the second column
             with col1:
-                self.st.write("Original Video")
-                webrtc_ctx_receive = webrtc_streamer(
-                    key="ultralytics-receive",
+                webrtc_ctx = webrtc_streamer(
+                    key="ultralytics-detection",
                     video_processor_factory=lambda: VideoProcessor(
                         self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
                     ),
                     rtc_configuration=rtc_configuration,
-                    media_stream_constraints={
-                        "video": video_constraints,
-                        "audio": False
-                    },
+                    media_stream_constraints={"video": True, "audio": False},
                     async_processing=True,
-                    video_html_attrs={
-                        "style": {"width": "100%", "margin": "0 auto", "border": "5px solid #FF64DA"},
-                        "controls": False,
-                        "autoPlay": True,
-                        "muted": True,
-                    },
-                )
-
-            # Start WebRTC streamer for processing and sending video
-            with col2:
-                self.st.write("Processed Video")
-                webrtc_ctx_send = webrtc_streamer(
-                    key="ultralytics-send",
-                    video_processor_factory=lambda: ProcessingVideoProcessor(
-                        self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
-                    ),
-                    rtc_configuration=rtc_configuration,
-                    media_stream_constraints={
-                        "video": video_constraints,
-                        "audio": False
-                    },
-                    async_processing=True,
-                    video_html_attrs={
-                        "style": {"width": "100%", "margin": "0 auto", "border": "5px solid #FF64DA"},
-                        "controls": False,
-                        "autoPlay": True,
-                        "muted": True,
-                    },
                 )
                 
-                # Information about WebRTC
-                self.st.info("""
-                ** Lưu ý về Webcam:**
-                - Thông qua WebRTC, ứng dụng sẽ cần quyền truy cập vào webcam của bạn
-                - Xử lý video được thực hiện trong trình duyệt của bạn
-                - Hãy chắc chắn bạn đã cấp quyền truy cập webcam khi được hỏi
-                """)
+                # Start the update thread when WebRTC is active
+                if webrtc_ctx.state.playing:
+                    if not hasattr(self, "_webrtc_thread") or not self._webrtc_thread.is_alive():
+                        self._webrtc_thread = threading.Thread(target=update_original_frame, daemon=True)
+                        self._webrtc_thread.start()
+            
+            # Information about WebRTC
+            self.st.info("""
+            ** Lưu ý về Webcam:**
+            - Thông qua WebRTC, ứng dụng sẽ cần quyền truy cập vào webcam của bạn
+            - Xử lý video được thực hiện trong trình duyệt của bạn
+            - Hãy chắc chắn bạn đã cấp quyền truy cập webcam khi được hỏi
+            """)
 
 
 if __name__ == "__main__":
