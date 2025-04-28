@@ -1,9 +1,13 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
 import io
+import queue
+import threading
 from typing import Any
 
 import cv2
+import numpy as np
+import time
 
 from ultralytics import YOLO
 from ultralytics.utils import LOGGER
@@ -32,10 +36,19 @@ class Inference:
         self.selected_ind = []
         self.model = None
 
+        # Using queues for thread-safe data passing
+        self.frame_queue = queue.Queue(maxsize=1)
+        self.annotated_frame_queue = queue.Queue(maxsize=1)
+        self.running = False
+
         self.temp_dict = {"model": None, **kwargs}
         self.model_path = None
         if self.temp_dict["model"] is not None:
             self.model_path = self.temp_dict["model"]
+
+        # Create session state for controlling the app flow
+        if 'running' not in self.st.session_state:
+            self.st.session_state['running'] = False
 
         LOGGER.info(f"Ultralytics Solutions: ✅ {self.temp_dict}")
 
@@ -61,7 +74,7 @@ class Inference:
 
         self.st.sidebar.title("User Configuration")
         self.source = self.st.sidebar.selectbox(
-            "Video",
+            "Video Source",
             ("webcam", "video"),
         )
         self.enable_trk = self.st.sidebar.radio("Enable Tracking", ("Yes", "No"))
@@ -104,22 +117,19 @@ class Inference:
         return class_names
 
     def inference(self):
-        """Perform real-time object detection inference on video or webcam feed."""
+        """Perform real-time object detection inference."""
         self.web_ui()
         self.sidebar()
         self.source_upload()
         class_names = self.configure()
         
-        # Create two columns for displaying results
-        col1, col2 = self.st.columns(2)
-        with col1:
-            self.st.write("Original Stream")
-            original_frame_placeholder = self.st.empty()  # Changed this line
-        with col2:
-            self.st.write("Processed Stream")
-            annotated_frame_placeholder = self.st.empty()  # Changed this line
+        # Create two columns for displaying frames
+        col1 = self.st.columns(1)[0]
         
-        # Process video case
+        with col1:
+            self.st.write("Webcam Stream (Left: Original, Right: Processed)")
+            self.org_frame = self.st.empty()
+        
         if self.source == "video" and self.vid_file_name:
             if self.st.sidebar.button("Start"):
                 stop_button = self.st.button("Stop")
@@ -148,8 +158,8 @@ class Inference:
                     annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                     
                     # Display frames
-                    original_frame_placeholder.image(rgb_frame, channels="RGB")  # Changed this line
-                    annotated_frame_placeholder.image(annotated_frame_rgb, channels="RGB")  # Changed this line
+                    self.org_frame.image(rgb_frame, channels="RGB")
+                    self.ann_frame.image(annotated_frame_rgb, channels="RGB")
                     
                     # Check if stop button was pressed
                     if stop_button:
@@ -162,22 +172,27 @@ class Inference:
             check_requirements("streamlit-webrtc>=0.45.0 av>=10.0.0")
             from streamlit_webrtc import webrtc_streamer, VideoProcessorBase, RTCConfiguration
             import av
-            import threading
-            import time
             
             class VideoProcessor(VideoProcessorBase):
-                def __init__(self, model, conf, iou, selected_ind, enable_trk, class_names):
+                def __init__(self, model, conf, iou, selected_ind, enable_trk, class_names, frame_queue):
                     self.model = model
                     self.conf = conf
                     self.iou = iou
                     self.selected_ind = selected_ind
                     self.enable_trk = enable_trk
                     self.class_names = class_names
-                    self.original_frame = None
+                    self.frame_queue = frame_queue
                     
                 def recv(self, frame):
                     img = frame.to_ndarray(format="bgr24")
-                    self.original_frame = img.copy()
+                    
+                    # Put original frame in queue for display
+                    try:
+                        if self.frame_queue.full():
+                            self.frame_queue.get_nowait()
+                        self.frame_queue.put_nowait(img.copy())
+                    except queue.Full:
+                        pass
                     
                     # Process frame with model
                     if self.enable_trk == "Yes":
@@ -190,7 +205,13 @@ class Inference:
                     # Annotate the frame with detection results
                     annotated_frame = results[0].plot()
                     
-                    return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+                    # Create a combined frame with original and processed side by side
+                    h, w = img.shape[:2]
+                    combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
+                    combined_frame[:, :w] = img
+                    combined_frame[:, w:] = annotated_frame
+                    
+                    return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
             
             # Configure WebRTC
             rtc_configuration = RTCConfiguration({
@@ -215,36 +236,36 @@ class Inference:
                     }
                 ]
             })
-
             
-            # Create a placeholder for the original frame
-            original_frame_placeholder = col1.empty()
-
             # Function to update the original frame
             def update_original_frame():
                 while True:
-                    if webrtc_ctx.video_processor:
-                        frame = webrtc_ctx.video_processor.original_frame
-                        if frame is not None:
+                    try:
+                        if not self.frame_queue.empty():
+                            frame = self.frame_queue.get()
                             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                            original_frame_placeholder.image(rgb_frame, channels="RGB")
+                            self.org_frame.image(rgb_frame, channels="RGB")
+                    except Exception as e:
+                        self.st.error(f"Error updating original frame: {e}")
                     time.sleep(0.03)  # Update every 30ms (approx. 30fps)
-
-            # Start the update thread only once
-            if not hasattr(self, "_webrtc_thread"):
-                self._webrtc_thread = threading.Thread(target=update_original_frame, daemon=True)
-                self._webrtc_thread.start()
             
-            # Start WebRTC streamer
-            webrtc_ctx = webrtc_streamer(
-                key="ultralytics-detection",
-                video_processor_factory=lambda: VideoProcessor(
-                    self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names
-                ),
-                rtc_configuration=rtc_configuration,
-                media_stream_constraints={"video": True, "audio": False},
-                async_processing=True,
-            )
+            # Start WebRTC streamer in the second column
+            with col1:
+                webrtc_ctx = webrtc_streamer(
+                    key="ultralytics-detection",
+                    video_processor_factory=lambda: VideoProcessor(
+                        self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
+                    ),
+                    rtc_configuration=rtc_configuration,
+                    media_stream_constraints={"video": True, "audio": False},
+                    async_processing=True,
+                )
+                
+                # Start the update thread when WebRTC is active
+                if webrtc_ctx.state.playing:
+                    if not hasattr(self, "_webrtc_thread") or not self._webrtc_thread.is_alive():
+                        self._webrtc_thread = threading.Thread(target=update_original_frame, daemon=True)
+                        self._webrtc_thread.start()
             
             # Information about WebRTC
             self.st.info("""
