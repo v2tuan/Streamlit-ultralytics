@@ -151,15 +151,22 @@ class Inference:
                     else:
                         results = self.model(frame, conf=self.conf, iou=self.iou, classes=self.selected_ind)
                     
+                    # Convert BGR to RGB for Streamlit display
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    # Plot results on frame
                     annotated_frame = results[0].plot()
-
+                    annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+                    
+                    # Display frames
+                    self.org_frame.image(rgb_frame, channels="RGB")
+                    self.ann_frame.image(annotated_frame_rgb, channels="RGB")
+                    
+                    # Check if stop button was pressed
                     if stop_button:
-                        cap.release()
-                        self.st.stop()
-
-                    self.org_frame.image(frame, channels="BGR")
-                    self.ann_frame.image(annotated_frame, channels="BGR")
+                        break
                 
+                cap.release()
+        
         # Process webcam case with streamlit-webrtc
         elif self.source == "webcam":
             check_requirements("streamlit-webrtc>=0.45.0 av>=10.0.0")
@@ -195,9 +202,16 @@ class Inference:
                     else:
                         results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
                     
+                    # Annotate the frame with detection results
                     annotated_frame = results[0].plot()
-
-                    return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
+                    
+                    # Create a combined frame with original and processed side by side
+                    h, w = img.shape[:2]
+                    combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
+                    combined_frame[:, :w] = img
+                    combined_frame[:, w:] = annotated_frame
+                    
+                    return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
             
             # Configure WebRTC
             rtc_configuration = RTCConfiguration({
@@ -229,7 +243,8 @@ class Inference:
                     try:
                         if not self.frame_queue.empty():
                             frame = self.frame_queue.get()
-                            self.org_frame.image(frame, channels="BGR")
+                            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                            self.org_frame.image(rgb_frame, channels="RGB")
                     except Exception as e:
                         self.st.error(f"Error updating original frame: {e}")
                     time.sleep(0.03)  # Update every 30ms (approx. 30fps)
