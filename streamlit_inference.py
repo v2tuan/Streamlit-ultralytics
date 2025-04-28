@@ -154,43 +154,15 @@ class Inference:
                     # Convert BGR to RGB for Streamlit display
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     
-                    # Create a copy of the frame for annotation
-                    annotated_frame = rgb_frame.copy()
-                    
-                    # Get detection results
-                    boxes = results[0].boxes
-                    
-                    # Draw bounding boxes and labels
-                    for box in boxes:
-                        # Get box coordinates
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                        
-                        # Get class name and confidence
-                        cls = int(box.cls[0].cpu().numpy())
-                        conf = float(box.conf[0].cpu().numpy())
-                        class_name = class_names[cls]
-                        
-                        # Draw rectangle
-                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        
-                        # Create label text
-                        label = f"{class_name} {conf:.2f}"
-                        
-                        # Get text size
-                        (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                        
-                        # Draw label background
-                        cv2.rectangle(annotated_frame, (x1, y1 - text_height - 4), (x1 + text_width, y1), (0, 255, 0), -1)
-                        
-                        # Draw label text
-                        cv2.putText(annotated_frame, label, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    # Get annotated frame using YOLO's plot method
+                    annotated_frame = results[0].plot()
+                    annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                     
                     # Create a combined frame with original and processed side by side
                     h, w = rgb_frame.shape[:2]
                     combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
                     combined_frame[:, :w] = rgb_frame
-                    combined_frame[:, w:] = annotated_frame
+                    combined_frame[:, w:] = annotated_frame_rgb
                     
                     # Display the combined frame
                     self.org_frame.image(combined_frame, channels="RGB")
@@ -239,43 +211,15 @@ class Inference:
                     # Convert BGR to RGB for Streamlit display
                     rgb_frame = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     
-                    # Create a copy of the frame for annotation
-                    annotated_frame = rgb_frame.copy()
-                    
-                    # Get detection results
-                    boxes = results[0].boxes
-                    
-                    # Draw bounding boxes and labels
-                    for box in boxes:
-                        # Get box coordinates
-                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-                        x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                        
-                        # Get class name and confidence
-                        cls = int(box.cls[0].cpu().numpy())
-                        conf = float(box.conf[0].cpu().numpy())
-                        class_name = self.class_names[cls]
-                        
-                        # Draw rectangle
-                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        
-                        # Create label text
-                        label = f"{class_name} {conf:.2f}"
-                        
-                        # Get text size
-                        (text_width, text_height), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                        
-                        # Draw label background
-                        cv2.rectangle(annotated_frame, (x1, y1 - text_height - 4), (x1 + text_width, y1), (0, 255, 0), -1)
-                        
-                        # Draw label text
-                        cv2.putText(annotated_frame, label, (x1, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    # Get annotated frame using YOLO's plot method
+                    annotated_frame = results[0].plot()
+                    annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                     
                     # Create a combined frame with original and processed side by side
                     h, w = rgb_frame.shape[:2]
                     combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
                     combined_frame[:, :w] = rgb_frame
-                    combined_frame[:, w:] = annotated_frame
+                    combined_frame[:, w:] = annotated_frame_rgb
                     
                     return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
             
