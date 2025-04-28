@@ -254,23 +254,22 @@ class Inference:
                         self.st.error(f"Error updating original frame: {e}")
                     time.sleep(0.03)  # Update every 30ms (approx. 30fps)
             
-            # Start WebRTC streamer in the second column
-            with col1:
-                webrtc_ctx = webrtc_streamer(
-                    key="ultralytics-detection",
-                    video_processor_factory=lambda: VideoProcessor(
-                        self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
-                    ),
-                    rtc_configuration=rtc_configuration,
-                    media_stream_constraints={"video": True, "audio": False},
-                    async_processing=True,
-                )
-                
-                # Start the update thread when WebRTC is active
-                if webrtc_ctx.state.playing:
-                    if not hasattr(self, "_webrtc_thread") or not self._webrtc_thread.is_alive():
-                        self._webrtc_thread = threading.Thread(target=update_original_frame, daemon=True)
-                        self._webrtc_thread.start()
+            # Start WebRTC streamer
+            webrtc_ctx = webrtc_streamer(
+                key="ultralytics-detection",
+                video_processor_factory=lambda: VideoProcessor(
+                    self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
+                ),
+                rtc_configuration=rtc_configuration,
+                media_stream_constraints={"video": True, "audio": False},
+                async_processing=True,
+            )
+            
+            # Start the update thread when WebRTC is active
+            if webrtc_ctx.state.playing:
+                if not hasattr(self, "_webrtc_thread") or not self._webrtc_thread.is_alive():
+                    self._webrtc_thread = threading.Thread(target=update_original_frame, daemon=True)
+                    self._webrtc_thread.start()
             
             # Information about WebRTC
             self.st.info("""
