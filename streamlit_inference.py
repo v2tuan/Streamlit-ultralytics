@@ -153,8 +153,8 @@ class Inference:
                     
                     # Convert BGR to RGB for Streamlit display
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    # Plot results on frame
-                    annotated_frame = results[0].plot()
+                    # Plot results on frame with no fill effect
+                    annotated_frame = results[0].plot(line_width=2, boxes=True, masks=False, probs=False, fill=False)
                     annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                     
                     # Create a combined frame with original and processed side by side
