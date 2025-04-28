@@ -157,9 +157,14 @@ class Inference:
                     annotated_frame = results[0].plot()
                     annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
                     
-                    # Display frames
-                    self.org_frame.image(rgb_frame, channels="RGB")
-                    self.ann_frame.image(annotated_frame_rgb, channels="RGB")
+                    # Create a combined frame with original and processed side by side
+                    h, w = rgb_frame.shape[:2]
+                    combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
+                    combined_frame[:, :w] = rgb_frame
+                    combined_frame[:, w:] = annotated_frame_rgb
+                    
+                    # Display the combined frame
+                    self.org_frame.image(combined_frame, channels="RGB")
                     
                     # Check if stop button was pressed
                     if stop_button:
