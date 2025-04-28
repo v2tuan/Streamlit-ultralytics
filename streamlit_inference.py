@@ -193,8 +193,6 @@ class Inference:
                     return av.VideoFrame.from_ndarray(annotated_frame, format="bgr24")
             
             # Configure WebRTC
-            from aiortc import RTCConfiguration, RTCIceServer
-
             rtc_configuration = RTCConfiguration({
                 "iceServers": [
                     {
