@@ -189,42 +189,56 @@ class Inference:
                     self.enable_trk = enable_trk
                     self.class_names = class_names
                     self.frame_queue = frame_queue
+                    self.last_processed_time = 0
+                    self.processing_interval = 1/30  # Target 30 FPS
+                    self.last_results = None
                     
                 def recv(self, frame):
+                    current_time = time.time()
+                    if current_time - self.last_processed_time < self.processing_interval:
+                        # Skip processing if not enough time has passed
+                        if self.last_results is not None:
+                            return self._create_output_frame(frame, self.last_results)
+                        return frame
+                    
                     img = frame.to_ndarray(format="bgr24")
                     
                     # Resize frame for processing while maintaining aspect ratio
-                    max_size = 640  # You can adjust this value
+                    max_size = 640
                     h, w = img.shape[:2]
                     scale = max_size / max(h, w)
                     if scale < 1:
                         img = cv2.resize(img, (int(w * scale), int(h * scale)))
                     
-                    # Put original frame in queue for display
-                    try:
-                        if self.frame_queue.full():
-                            self.frame_queue.get_nowait()
-                        self.frame_queue.put_nowait(img.copy())
-                    except queue.Full:
-                        pass
-                    
                     # Process frame with model
-                    if self.enable_trk == "Yes":
-                        results = self.model.track(
-                            img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
-                        )
-                    else:
-                        results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
+                    try:
+                        if self.enable_trk == "Yes":
+                            results = self.model.track(
+                                img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+                            )
+                        else:
+                            results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
+                        
+                        self.last_results = results
+                        self.last_processed_time = current_time
+                        
+                        return self._create_output_frame(frame, results)
+                    except Exception as e:
+                        print(f"Error processing frame: {e}")
+                        return frame
+                
+                def _create_output_frame(self, frame, results):
+                    img = frame.to_ndarray(format="bgr24")
+                    h, w = img.shape[:2]
                     
                     # Annotate the frame with detection results
                     annotated_frame = results[0].plot()
                     
                     # Resize back to original size for display
-                    if scale < 1:
+                    if annotated_frame.shape[:2] != (h, w):
                         annotated_frame = cv2.resize(annotated_frame, (w, h))
                     
                     # Create a combined frame with original and processed side by side
-                    h, w = img.shape[:2]
                     combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
                     combined_frame[:, :w] = img
                     combined_frame[:, w:] = annotated_frame
@@ -241,20 +255,25 @@ class Inference:
                         "urls": "turn:global.turn.twilio.com:3478?transport=udp",
                         "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
                         "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
-                    },
-                    {
-                        "urls": "turn:global.turn.twilio.com:3478?transport=tcp",
-                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
-                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
-                    },
-                    {
-                        "urls": "turn:global.turn.twilio.com:443?transport=tcp",
-                        "username": "e991673b3585edeabca62f206e6d3746a8db7dfb41533f892ea8960740528f2c",
-                        "credential": "gD6NYi42L4wFD5Kt2C+Rx5sKiKYWY6UEfu1lzW6A9/w="
                     }
-                ]
+                ],
+                "iceTransportPolicy": "all",
+                "bundlePolicy": "max-bundle",
+                "rtcpMuxPolicy": "require",
+                "sdpSemantics": "unified-plan"
             })
-            
+
+            # Configure media constraints for better performance
+            media_stream_constraints = {
+                "video": {
+                    "width": {"ideal": 640},
+                    "height": {"ideal": 480},
+                    "frameRate": {"ideal": 30},
+                    "facingMode": "user"
+                },
+                "audio": False
+            }
+
             # Function to update the original frame
             def update_original_frame():
                 while True:
@@ -270,7 +289,7 @@ class Inference:
                         self.st.error(f"Error updating original frame: {e}")
                     time.sleep(0.01)  # Reduced sleep time for more responsive updates
             
-            # Start WebRTC streamer in the second column
+            # Start WebRTC streamer with optimized configuration
             with col1:
                 webrtc_ctx = webrtc_streamer(
                     key="ultralytics-detection",
@@ -278,8 +297,14 @@ class Inference:
                         self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
                     ),
                     rtc_configuration=rtc_configuration,
-                    media_stream_constraints={"video": True, "audio": False},
+                    media_stream_constraints=media_stream_constraints,
                     async_processing=True,
+                    video_html_attrs={
+                        "style": {"width": "100%", "margin": "0 auto", "border": "5px solid #ccc"},
+                        "controls": False,
+                        "autoPlay": True,
+                        "muted": True,
+                    },
                 )
                 
                 # Start the update thread when WebRTC is active
