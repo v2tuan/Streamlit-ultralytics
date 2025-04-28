@@ -187,57 +187,11 @@ class Inference:
                     self.enable_trk = enable_trk
                     self.class_names = class_names
                     self.frame_queue = frame_queue
-                    self.processed_frame_queue = queue.Queue(maxsize=1)
-                    self.processing_thread = None
-                    self.running = True
-                    
-                def start_processing_thread(self):
-                    def process_frames():
-                        while self.running:
-                            try:
-                                if not self.frame_queue.empty():
-                                    frame = self.frame_queue.get_nowait()
-                                    
-                                    # Process frame with model
-                                    if self.enable_trk == "Yes":
-                                        results = self.model.track(
-                                            frame, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
-                                        )
-                                    else:
-                                        results = self.model(frame, conf=self.conf, iou=self.iou, classes=self.selected_ind)
-                                    
-                                    # Annotate the frame with detection results
-                                    annotated_frame = results[0].plot()
-                                    
-                                    # Create a combined frame with original and processed side by side
-                                    h, w = frame.shape[:2]
-                                    combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
-                                    combined_frame[:, :w] = frame
-                                    combined_frame[:, w:] = annotated_frame
-                                    
-                                    # Put processed frame in queue
-                                    if self.processed_frame_queue.full():
-                                        self.processed_frame_queue.get_nowait()
-                                    self.processed_frame_queue.put_nowait(combined_frame)
-                                    
-                            except queue.Empty:
-                                pass
-                            except Exception as e:
-                                print(f"Error in processing thread: {e}")
-                            time.sleep(0.01)  # Small delay to prevent CPU overload
-                    
-                    self.processing_thread = threading.Thread(target=process_frames, daemon=True)
-                    self.processing_thread.start()
-                    
-                def stop_processing_thread(self):
-                    self.running = False
-                    if self.processing_thread:
-                        self.processing_thread.join()
                     
                 def recv(self, frame):
                     img = frame.to_ndarray(format="bgr24")
                     
-                    # Put original frame in queue for processing
+                    # Put original frame in queue for display
                     try:
                         if self.frame_queue.full():
                             self.frame_queue.get_nowait()
@@ -245,19 +199,43 @@ class Inference:
                     except queue.Full:
                         pass
                     
-                    # Get processed frame from queue
-                    try:
-                        if not self.processed_frame_queue.empty():
-                            combined_frame = self.processed_frame_queue.get_nowait()
-                            return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
-                    except queue.Empty:
-                        pass
-                    
-                    # If no processed frame available, return original frame
                     return av.VideoFrame.from_ndarray(img, format="bgr24")
-                
-                def __del__(self):
-                    self.stop_processing_thread()
+
+            class ProcessingVideoProcessor(VideoProcessorBase):
+                def __init__(self, model, conf, iou, selected_ind, enable_trk, class_names, frame_queue):
+                    self.model = model
+                    self.conf = conf
+                    self.iou = iou
+                    self.selected_ind = selected_ind
+                    self.enable_trk = enable_trk
+                    self.class_names = class_names
+                    self.frame_queue = frame_queue
+                    
+                def recv(self, frame):
+                    try:
+                        # Get the latest frame from the queue
+                        img = self.frame_queue.get_nowait()
+                        
+                        # Process frame with model
+                        if self.enable_trk == "Yes":
+                            results = self.model.track(
+                                img, conf=self.conf, iou=self.iou, classes=self.selected_ind, persist=True
+                            )
+                        else:
+                            results = self.model(img, conf=self.conf, iou=self.iou, classes=self.selected_ind)
+                        
+                        # Annotate the frame with detection results
+                        annotated_frame = results[0].plot()
+                        
+                        # Create a combined frame with original and processed side by side
+                        h, w = img.shape[:2]
+                        combined_frame = np.zeros((h, w*2, 3), dtype=np.uint8)
+                        combined_frame[:, :w] = img
+                        combined_frame[:, w:] = annotated_frame
+                        
+                        return av.VideoFrame.from_ndarray(combined_frame, format="bgr24")
+                    except queue.Empty:
+                        return frame
 
             # Configure WebRTC
             rtc_configuration = RTCConfiguration({
@@ -280,11 +258,37 @@ class Inference:
                 "frameRate": {"min": 15, "max": 30}
             }
 
-            # Start WebRTC streamer in the second column
+            # Create two columns for displaying frames
+            col1, col2 = self.st.columns(2)
+            
+            # Start WebRTC streamer for receiving video
             with col1:
-                webrtc_ctx = webrtc_streamer(
-                    key="ultralytics-detection",
+                self.st.write("Original Video")
+                webrtc_ctx_receive = webrtc_streamer(
+                    key="ultralytics-receive",
                     video_processor_factory=lambda: VideoProcessor(
+                        self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
+                    ),
+                    rtc_configuration=rtc_configuration,
+                    media_stream_constraints={
+                        "video": video_constraints,
+                        "audio": False
+                    },
+                    async_processing=True,
+                    video_html_attrs={
+                        "style": {"width": "100%", "margin": "0 auto", "border": "5px solid #FF64DA"},
+                        "controls": False,
+                        "autoPlay": True,
+                        "muted": True,
+                    },
+                )
+
+            # Start WebRTC streamer for processing and sending video
+            with col2:
+                self.st.write("Processed Video")
+                webrtc_ctx_send = webrtc_streamer(
+                    key="ultralytics-send",
+                    video_processor_factory=lambda: ProcessingVideoProcessor(
                         self.model, self.conf, self.iou, self.selected_ind, self.enable_trk, class_names, self.frame_queue
                     ),
                     rtc_configuration=rtc_configuration,
